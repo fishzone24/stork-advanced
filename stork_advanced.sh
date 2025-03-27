@@ -1312,7 +1312,7 @@ cat << "EOF"
 
 EOF
 echo -e "${BLUE}==================================================================${RESET}"
-echo -e "${GREEN}Dria 节点一键管理脚本${RESET}"
+echo -e "${GREEN}Stork 节点一键管理脚本${RESET}"
 echo -e "${YELLOW}脚本作者: fishzone24 - 推特: https://x.com/fishzone24${RESET}"
 echo -e "${YELLOW}此脚本为免费开源脚本，如有问题请提交 issue${RESET}"
 echo -e "${BLUE}==================================================================${RESET}"
