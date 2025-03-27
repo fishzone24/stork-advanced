@@ -861,6 +861,8 @@ main_menu() {
                 
                 print_success "项目安装完成！"
                 print_info "开始配置项目..."
+                print_info "请按提示输入您的账户和代理信息"
+                read -p "按回车键开始配置..." dummy
                 
                 # 配置账户
                 configure_accounts || { print_error "账户配置失败"; read -p "按回车键继续..." dummy; continue; }
@@ -872,7 +874,11 @@ main_menu() {
                 create_config_file || { print_error "配置文件创建失败"; read -p "按回车键继续..." dummy; continue; }
                 
                 print_success "安装和配置完成！"
-                read -p "按回车键继续..." dummy
+                print_info "您现在可以："
+                print_info "1. 使用选项2启动节点"
+                print_info "2. 使用选项4查看运行日志"
+                print_info "3. 使用选项7打开监控面板"
+                read -p "按回车键返回主菜单..." dummy
                 ;;
             2)
                 start_project
