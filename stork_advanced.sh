@@ -164,7 +164,7 @@ install_project() {
 create_pm2_config() {
     print_info "创建 PM2 配置文件..."
     
-    cat > "$PROJECT_DIR/ecosystem.config.js" << EOF
+    cat > "$PROJECT_DIR/ecosystem.config.cjs" << EOF
 module.exports = {
   apps : [{
     name: "${PM2_NAME}",
@@ -744,7 +744,7 @@ start_project() {
     
     # 使用 PM2 启动
     print_info "使用 PM2 启动节点..."
-    pm2 start ecosystem.config.js || { print_error "PM2 启动失败"; return 1; }
+    pm2 start ecosystem.config.cjs || { print_error "PM2 启动失败"; return 1; }
     
     # 保存 PM2 配置，确保重启后自动运行
     print_info "保存 PM2 配置..."
