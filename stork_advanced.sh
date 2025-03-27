@@ -501,105 +501,155 @@ async function main() {
 async function processAccount(account, accountIndex) {
   console.log(`[${new Date().toISOString()}] [信息] 正在处理 ${account.username} (账户 ${accountIndex + 1}/${accounts.length})`);
   
+  // 获取代理
   const proxy = proxyManager.getProxyForAccount(accountIndex);
   console.log(`[${new Date().toISOString()}] [信息] 使用代理: ${proxyManager.maskProxy(proxy)}`);
   
   if (!proxy) {
-    console.warn(`[${new Date().toISOString()}] [警告] 账户 ${account.username} 没有对应的代理配置`);
+    console.error(`[${new Date().toISOString()}] [错误] 账户 ${account.username} 没有可用代理`);
+    return;
   }
   
-  const isProxyValid = await proxyManager.testProxy(proxy);
-  if (!isProxyValid && proxy) {
-    console.error(`[${new Date().toISOString()}] [错误] 账户 ${account.username} 的代理无效`);
-    console.warn(`[${new Date().toISOString()}] [警告] 尝试不使用代理继续...`);
+  // 构建代理参数
+  let proxyArg = null;
+  let authArg = null;
+  
+  if (proxy.includes('socks5://') || proxy.includes('socks4://')) {
+    // 处理SOCKS代理
+    if (proxy.includes('@')) {
+      // 有身份验证的SOCKS代理
+      try {
+        const url = new URL(proxy);
+        proxyArg = `--proxy-server=socks5=${url.hostname}:${url.port}`;
+        if (url.username && url.password) {
+          authArg = `--proxy-auth=${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`;
+        }
+      } catch (e) {
+        console.error(`[${new Date().toISOString()}] [错误] 解析SOCKS代理失败:`, e.message);
+        proxyArg = `--proxy-server=${proxy}`;
+      }
+    } else {
+      // 无身份验证的SOCKS代理
+      proxyArg = `--proxy-server=${proxy}`;
+    }
+  } else if (proxy.includes('http://') || proxy.includes('https://')) {
+    // HTTP/HTTPS代理
+    proxyArg = `--proxy-server=${proxy}`;
+  } else {
+    // 假设是 IP:PORT 格式，添加HTTP前缀
+    proxyArg = `--proxy-server=http://${proxy}`;
+  }
+  
+  console.log(`[${new Date().toISOString()}] [信息] 代理参数: ${proxyArg}`);
+  if (authArg) {
+    console.log(`[${new Date().toISOString()}] [信息] 认证参数: ${authArg.replace(/:[^:]*$/, ':****')}`);
   }
   
   let retries = 0;
   let success = false;
   
-  while (retries < config.maxRetries && !success) {
-    let browser = null;
+  // 尝试多种代理格式
+  const proxyFormats = [
+    { format: 'default', arg: proxyArg, auth: authArg },
+    { format: 'socks5', arg: proxyArg.replace('socks5://', 'socks5='), auth: authArg },
+    { format: 'http', arg: proxyArg.replace(/^--proxy-server=(socks[45]):\/\//, '--proxy-server=http://'), auth: authArg },
+    { format: 'direct', arg: null, auth: null } // 最后尝试不使用代理
+  ];
+  
+  for (const proxyFormat of proxyFormats) {
+    if (success) break;
     
-    try {
-      const userAgent = proxyManager.getCurrentUserAgent();
+    console.log(`[${new Date().toISOString()}] [信息] 尝试使用代理格式: ${proxyFormat.format}`);
+    
+    retries = 0;
+    while (retries < config.maxRetries && !success) {
+      let browser = null;
       
-      // 准备启动选项
-      const launchOptions = {
-        ...config.botOptions,
-        args: [
-          ...config.botOptions.args
-        ]
-      };
-      
-      // 只有当代理有效时，才添加代理参数
-      if (proxy && isProxyValid) {
-        // 针对SOCKS代理特殊处理
-        if (proxy.startsWith('socks')) {
-          const socksUrl = new URL(proxy);
-          launchOptions.args.push(`--proxy-server=socks5://${socksUrl.host}`);
-          
-          // 如果有用户名和密码，需要特殊处理
-          if (socksUrl.username && socksUrl.password) {
-            launchOptions.args.push(`--proxy-auth=${socksUrl.username}:${socksUrl.password}`);
-          }
-        } else {
-          launchOptions.args.push(`--proxy-server=${proxy}`);
+      try {
+        const userAgent = proxyManager.getCurrentUserAgent();
+        
+        const launchArgs = [
+          ...config.botOptions.args,
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-web-security',
+          '--disable-features=BlockInsecurePrivateNetworkRequests'
+        ];
+        
+        if (proxyFormat.arg) {
+          launchArgs.push(proxyFormat.arg);
         }
-      }
-      
-      console.log(`[${new Date().toISOString()}] [信息] 启动浏览器选项: ${JSON.stringify(launchOptions)}`);
-      
-      browser = await puppeteer.launch(launchOptions);
-      const page = await browser.newPage();
-      
-      await page.setUserAgent(userAgent);
-      await page.setExtraHTTPHeaders(config.headers || {});
-      await page.setViewport({ width: 1920, height: 1080 });
-      
-      await page.evaluateOnNewDocument(() => {
-        Object.defineProperty(navigator, 'webdriver', {
-          get: () => false,
+        
+        if (proxyFormat.auth) {
+          launchArgs.push(proxyFormat.auth);
+        }
+        
+        console.log(`[${new Date().toISOString()}] [信息] 启动参数: ${JSON.stringify(launchArgs)}`);
+        
+        // 准备启动选项
+        const launchOptions = {
+          ...config.botOptions,
+          args: launchArgs
+        };
+        
+        browser = await puppeteer.launch(launchOptions);
+        const page = await browser.newPage();
+        
+        await page.setUserAgent(userAgent);
+        await page.setExtraHTTPHeaders({
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+          'Cache-Control': 'max-age=0',
+          'Connection': 'keep-alive'
         });
         
-        Object.defineProperty(navigator, 'plugins', {
-          get: () => {
-            return [
-              { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-              { name: 'Chrome PDF Viewer', filename: '', description: '' },
-              { name: 'Native Client', filename: '', description: '' }
-            ];
-          },
+        await page.setViewport({ width: 1920, height: 1080 });
+        
+        // 防止指纹识别
+        await page.evaluateOnNewDocument(() => {
+          Object.defineProperty(navigator, 'webdriver', {
+            get: () => false,
+          });
+          
+          Object.defineProperty(navigator, 'plugins', {
+            get: () => {
+              return [
+                { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                { name: 'Chrome PDF Viewer', filename: '', description: '' },
+                { name: 'Native Client', filename: '', description: '' }
+              ];
+            },
+          });
+          
+          Object.defineProperty(navigator, 'languages', {
+            get: () => ['en-US', 'en'],
+          });
+          
+          const originalQuery = window.navigator.permissions.query;
+          window.navigator.permissions.query = (parameters) => (
+            parameters.name === 'notifications' ?
+              Promise.resolve({ state: Notification.permission }) :
+              originalQuery(parameters)
+          );
         });
         
-        Object.defineProperty(navigator, 'languages', {
-          get: () => ['en-US', 'en'],
-        });
+        await login(page, account);
+        await performTasks(page);
         
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) => (
-          parameters.name === 'notifications' ?
-            Promise.resolve({ state: Notification.permission }) :
-            originalQuery(parameters)
-        );
-      });
-      
-      await login(page, account);
-      await performTasks(page);
-      
-      success = true;
-      console.log(`[${new Date().toISOString()}] [信息] ${account.username} 处理成功`);
-      
-    } catch (error) {
-      retries++;
-      console.error(`[${new Date().toISOString()}] [错误] 处理账户 ${account.username} 失败 (尝试 ${retries}/${config.maxRetries}):`, error.message);
-      
-      if (retries < config.maxRetries) {
-        console.log(`[${new Date().toISOString()}] [信息] ${config.retryDelay / 1000} 秒后重试...`);
-        await new Promise(resolve => setTimeout(resolve, config.retryDelay));
-      }
-    } finally {
-      if (browser) {
-        await browser.close();
+        success = true;
+        console.log(`[${new Date().toISOString()}] [信息] ${account.username} 处理成功`);
+        
+      } catch (error) {
+        retries++;
+        console.error(`[${new Date().toISOString()}] [错误] 处理账户 ${account.username} 失败 (尝试 ${retries}/${config.maxRetries}):`, error.message);
+        
+        if (retries < config.maxRetries) {
+          console.log(`[${new Date().toISOString()}] [信息] ${config.retryDelay / 1000} 秒后重试...`);
+          await new Promise(resolve => setTimeout(resolve, config.retryDelay));
+        }
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
       }
     }
   }
@@ -752,15 +802,46 @@ configure_proxies() {
 
     > "$PROXIES_FILE"
     
-    print_info "请输入代理地址（支持格式：http://用户名:密码@IP:端口 或 IP:端口）"
-    print_info "输入空行完成输入"
+    print_info "请输入代理地址，支持以下格式:"
+    print_info "1. SOCKS5代理: socks5://用户名:密码@IP:端口"
+    print_info "2. HTTP代理: http://用户名:密码@IP:端口"
+    print_info "3. 简单IP:端口格式: IP:端口 (会自动转为http://IP:端口)"
     print_warning "注意：每个账户应对应一个代理，请确保代理数量与账户数量一致！"
     
     local count=0
     while true; do
         read -p "代理地址: " proxy
         [[ -z "$proxy" ]] && break
-        echo "$proxy" >> "$PROXIES_FILE"
+        
+        # 验证并格式化代理
+        if [[ "$proxy" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$ ]]; then
+            # 如果是 IP:端口 格式，添加 http:// 前缀
+            print_info "检测到IP:端口格式，转换为http://$proxy"
+            echo "http://$proxy" >> "$PROXIES_FILE"
+        elif [[ "$proxy" =~ ^socks[45]://[^@]+@[^:]+:[0-9]+$ ]]; then
+            # 如果是 socks://user:pass@ip:port 格式，保持不变
+            print_info "检测到SOCKS代理格式，已验证"
+            echo "$proxy" >> "$PROXIES_FILE"
+        elif [[ "$proxy" =~ ^(http|https)://[^@]+@[^:]+:[0-9]+$ ]]; then
+            # 如果是 http(s)://user:pass@ip:port 格式，保持不变
+            print_info "检测到HTTP代理格式，已验证"
+            echo "$proxy" >> "$PROXIES_FILE"
+        elif [[ "$proxy" =~ ^(http|https|socks[45])://[^:]+:[0-9]+$ ]]; then
+            # 如果是 http(s)://ip:port 或 socks://ip:port 格式，保持不变
+            print_info "检测到不带认证的代理格式，已验证"
+            echo "$proxy" >> "$PROXIES_FILE"
+        else
+            # 未知格式，提示用户确认
+            print_warning "无法识别的代理格式: $proxy"
+            read -p "是否仍然添加此代理？(y/n): " add_anyway
+            if [[ "$add_anyway" == "y" || "$add_anyway" == "Y" ]]; then
+                echo "$proxy" >> "$PROXIES_FILE"
+            else
+                print_info "跳过此代理"
+                continue
+            fi
+        fi
+        
         ((count++))
     done
     
@@ -1076,7 +1157,10 @@ main_menu() {
                 
                 # 配置代理
                 print_info "配置代理信息..."
-                print_info "请输入代理地址（支持格式：http://用户名:密码@IP:端口 或 IP:端口）"
+                print_info "请输入代理地址，支持以下格式:"
+                print_info "1. SOCKS5代理: socks5://用户名:密码@IP:端口"
+                print_info "2. HTTP代理: http://用户名:密码@IP:端口"
+                print_info "3. 简单IP:端口格式: IP:端口 (会自动转为http://IP:端口)"
                 print_warning "注意：每个账户应对应一个代理，请确保代理数量与账户数量一致！"
                 > "$PROXIES_FILE"
                 local proxy_count=0
@@ -1115,9 +1199,50 @@ main_menu() {
                 read -p "按回车键继续..." dummy
                 ;;
             6)
+                # 停止节点
+                if pm2 list | grep -q "$PM2_NAME"; then
+                    print_warning "检测到节点正在运行，建议先停止节点再更新配置"
+                    read -p "是否停止运行中的节点？(y/n): " stop_node
+                    if [[ "$stop_node" == "y" || "$stop_node" == "Y" ]]; then
+                        pm2 stop "$PM2_NAME" > /dev/null 2>&1
+                        print_info "已停止节点"
+                    fi
+                fi
+                
+                # 更新账户和代理配置
                 configure_accounts
                 configure_proxies
-                create_config_file
+                
+                # 询问是否更新配置文件
+                read -p "是否更新其他配置参数？(y/n): " update_config
+                if [[ "$update_config" == "y" || "$update_config" == "Y" ]]; then
+                    create_config_file
+                fi
+                
+                # 询问是否重新生成代码文件
+                read -p "是否重新生成增强代码文件？(y/n): " recreate_code
+                if [[ "$recreate_code" == "y" || "$recreate_code" == "Y" ]]; then
+                    create_enhanced_code
+                fi
+                
+                print_success "配置更新完成！"
+                
+                # 询问是否重启节点
+                if pm2 list | grep -q "$PM2_NAME"; then
+                    read -p "是否重启节点应用更新后的配置？(y/n): " restart_node
+                    if [[ "$restart_node" == "y" || "$restart_node" == "Y" ]]; then
+                        pm2 restart "$PM2_NAME" > /dev/null 2>&1
+                        print_success "节点已重启，新配置已生效"
+                    else
+                        print_info "节点未重启，配置将在下次启动时生效"
+                    fi
+                else
+                    read -p "是否立即启动节点？(y/n): " start_node
+                    if [[ "$start_node" == "y" || "$start_node" == "Y" ]]; then
+                        start_project
+                    fi
+                fi
+                
                 read -p "按回车键继续..." dummy
                 ;;
             7)
