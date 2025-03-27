@@ -442,7 +442,8 @@ EOF
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
-const ProxyManager = require('./proxy-manager');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 
 // 加载配置
 let config;
@@ -479,8 +480,63 @@ try {
   process.exit(1);
 }
 
-// 初始化代理管理器
-const proxyManager = new ProxyManager(config);
+// 加载代理
+let proxies = [];
+try {
+  const proxyFile = path.join(process.cwd(), 'proxies.txt');
+  if (fs.existsSync(proxyFile)) {
+    const content = fs.readFileSync(proxyFile, 'utf8');
+    proxies = content.split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'));
+    console.log(`[${new Date().toISOString()}] [信息] 已加载 ${proxies.length} 个代理`);
+  } else {
+    console.log(`[${new Date().toISOString()}] [警告] 代理文件不存在: ${proxyFile}`);
+  }
+} catch (error) {
+  console.error(`[${new Date().toISOString()}] [错误] 加载代理失败:`, error);
+}
+
+// 用户代理列表
+const userAgents = config.userAgents || [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+];
+let currentUserAgentIndex = 0;
+
+// 获取随机用户代理
+function getRandomUserAgent() {
+  currentUserAgentIndex = (currentUserAgentIndex + 1) % userAgents.length;
+  return userAgents[currentUserAgentIndex];
+}
+
+// 获取账户对应的代理
+function getProxyForAccount(accountIndex) {
+  if (proxies.length === 0) {
+    console.error(`[${new Date().toISOString()}] [错误] 没有可用代理！请先配置代理。`);
+    return null;
+  }
+  
+  if (accountIndex >= proxies.length) {
+    console.log(`[${new Date().toISOString()}] [警告] 账户索引 ${accountIndex} 超出代理数量 ${proxies.length}，使用最后一个代理`);
+    return proxies[proxies.length - 1];
+  }
+  
+  return proxies[accountIndex];
+}
+
+// 掩码处理代理信息（打印日志用）
+function maskProxy(proxy) {
+  if (!proxy) return 'none';
+  
+  if (proxy.includes('@')) {
+    const [auth, hostPort] = proxy.split('@');
+    const [protocol, userPass] = auth.split('://');
+    const [user, pass] = userPass.split(':');
+    return `${protocol}://${user}:****@${hostPort}`;
+  }
+  
+  return proxy;
+}
 
 // 主函数
 async function main() {
@@ -502,97 +558,120 @@ async function processAccount(account, accountIndex) {
   console.log(`[${new Date().toISOString()}] [信息] 正在处理 ${account.username} (账户 ${accountIndex + 1}/${accounts.length})`);
   
   // 获取代理
-  const proxy = proxyManager.getProxyForAccount(accountIndex);
-  console.log(`[${new Date().toISOString()}] [信息] 使用代理: ${proxyManager.maskProxy(proxy)}`);
+  const proxy = getProxyForAccount(accountIndex);
+  console.log(`[${new Date().toISOString()}] [信息] 使用代理: ${maskProxy(proxy)}`);
   
+  // 如果没有代理，无法继续
   if (!proxy) {
-    console.error(`[${new Date().toISOString()}] [错误] 账户 ${account.username} 没有可用代理`);
+    console.error(`[${new Date().toISOString()}] [错误] 账户 ${account.username} 没有可用代理，无法继续。`);
     return;
-  }
-  
-  // 构建代理参数
-  let proxyArg = null;
-  let authArg = null;
-  
-  if (proxy.includes('socks5://') || proxy.includes('socks4://')) {
-    // 处理SOCKS代理
-    if (proxy.includes('@')) {
-      // 有身份验证的SOCKS代理
-      try {
-        const url = new URL(proxy);
-        proxyArg = `--proxy-server=socks5=${url.hostname}:${url.port}`;
-        if (url.username && url.password) {
-          authArg = `--proxy-auth=${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`;
-        }
-      } catch (e) {
-        console.error(`[${new Date().toISOString()}] [错误] 解析SOCKS代理失败:`, e.message);
-        proxyArg = `--proxy-server=${proxy}`;
-      }
-    } else {
-      // 无身份验证的SOCKS代理
-      proxyArg = `--proxy-server=${proxy}`;
-    }
-  } else if (proxy.includes('http://') || proxy.includes('https://')) {
-    // HTTP/HTTPS代理
-    proxyArg = `--proxy-server=${proxy}`;
-  } else {
-    // 假设是 IP:PORT 格式，添加HTTP前缀
-    proxyArg = `--proxy-server=http://${proxy}`;
-  }
-  
-  console.log(`[${new Date().toISOString()}] [信息] 代理参数: ${proxyArg}`);
-  if (authArg) {
-    console.log(`[${new Date().toISOString()}] [信息] 认证参数: ${authArg.replace(/:[^:]*$/, ':****')}`);
   }
   
   let retries = 0;
   let success = false;
   
-  // 尝试多种代理格式
-  const proxyFormats = [
-    { format: 'default', arg: proxyArg, auth: authArg },
-    { format: 'socks5', arg: proxyArg.replace('socks5://', 'socks5='), auth: authArg },
-    { format: 'http', arg: proxyArg.replace(/^--proxy-server=(socks[45]):\/\//, '--proxy-server=http://'), auth: authArg },
-    { format: 'direct', arg: null, auth: null } // 最后尝试不使用代理
+  // 尝试不同的代理连接方式
+  const connectionMethods = [
+    { name: "使用启动参数", useProxy: true, useExplicitArgs: true },
+    { name: "使用请求拦截", useProxy: true, useExplicitArgs: false, useHeadless: true }
   ];
   
-  for (const proxyFormat of proxyFormats) {
+  for (const method of connectionMethods) {
     if (success) break;
     
-    console.log(`[${new Date().toISOString()}] [信息] 尝试使用代理格式: ${proxyFormat.format}`);
+    console.log(`[${new Date().toISOString()}] [信息] 尝试使用 ${method.name} 方式连接`);
     
     retries = 0;
     while (retries < config.maxRetries && !success) {
       let browser = null;
       
       try {
-        const userAgent = proxyManager.getCurrentUserAgent();
+        const userAgent = getRandomUserAgent();
         
+        // 准备启动参数
         const launchArgs = [
-          ...config.botOptions.args,
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-web-security',
-          '--disable-features=BlockInsecurePrivateNetworkRequests'
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-features=IsolateOrigins,site-per-process",
+          "--disable-web-security",
+          "--disable-features=BlockInsecurePrivateNetworkRequests",
+          `--user-agent=${userAgent}`
         ];
         
-        if (proxyFormat.arg) {
-          launchArgs.push(proxyFormat.arg);
+        // 使用代理
+        if (method.useExplicitArgs) {
+          // 方法1: 使用启动参数添加代理
+          if (proxy.startsWith('socks')) {
+            try {
+              const url = new URL(proxy);
+              launchArgs.push(`--proxy-server=socks5=${url.hostname}:${url.port}`);
+              
+              if (url.username && url.password) {
+                launchArgs.push(`--proxy-auth=${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`);
+              }
+            } catch (e) {
+              console.error(`[${new Date().toISOString()}] [错误] 解析SOCKS代理失败:`, e.message);
+              launchArgs.push(`--proxy-server=${proxy}`);
+            }
+          } else if (proxy.includes('http')) {
+            launchArgs.push(`--proxy-server=${proxy}`);
+          } else {
+            // 假设是IP:PORT格式
+            launchArgs.push(`--proxy-server=http://${proxy}`);
+          }
         }
         
-        if (proxyFormat.auth) {
-          launchArgs.push(proxyFormat.auth);
-        }
-        
-        console.log(`[${new Date().toISOString()}] [信息] 启动参数: ${JSON.stringify(launchArgs)}`);
+        console.log(`[${new Date().toISOString()}] [信息] 启动浏览器，参数: ${launchArgs.join(' ')}`);
         
         // 准备启动选项
         const launchOptions = {
-          ...config.botOptions,
-          args: launchArgs
+          headless: method.useHeadless !== false ? true : false,
+          args: launchArgs,
+          ignoreHTTPSErrors: true,
+          timeout: 60000
         };
         
         browser = await puppeteer.launch(launchOptions);
         const page = await browser.newPage();
+        
+        // 如果使用请求拦截方式
+        if (!method.useExplicitArgs) {
+          // 方法2: 在页面级别设置代理
+          if (proxy.startsWith('socks')) {
+            const agent = new SocksProxyAgent(proxy);
+            await page.setRequestInterception(true);
+            page.on('request', request => {
+              const overrides = {};
+              
+              if (request.isNavigationRequest()) {
+                overrides.agent = agent;
+                overrides.headers = {
+                  ...request.headers(),
+                  'user-agent': userAgent
+                };
+              }
+              
+              request.continue(overrides);
+            });
+          } else {
+            const agent = new HttpsProxyAgent(proxy.includes('http') ? proxy : `http://${proxy}`);
+            await page.setRequestInterception(true);
+            page.on('request', request => {
+              const overrides = {};
+              
+              if (request.isNavigationRequest()) {
+                overrides.agent = agent;
+                overrides.headers = {
+                  ...request.headers(),
+                  'user-agent': userAgent
+                };
+              }
+              
+              request.continue(overrides);
+            });
+          }
+        }
         
         await page.setUserAgent(userAgent);
         await page.setExtraHTTPHeaders({
