@@ -8,7 +8,14 @@ BLUE='\033[0;34m'
 NC='\033[0m' # 无颜色
 
 # 项目目录
-PROJECT_DIR="$HOME/stork_advanced"
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+    # Windows 系统
+    PROJECT_DIR="./stork_advanced"
+else
+    # Linux/Unix 系统
+    PROJECT_DIR="$HOME/stork_advanced"
+fi
+
 CONFIG_FILE="$PROJECT_DIR/config.json"
 ACCOUNTS_FILE="$PROJECT_DIR/accounts.js"
 PROXIES_FILE="$PROJECT_DIR/proxies.txt"
@@ -37,25 +44,43 @@ install_dependencies() {
 
     # 更新系统
     print_info "更新系统包列表..."
-    sudo apt-get update -qq || { print_error "系统更新失败"; return 1; }
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+        # Windows 系统
+        print_info "Windows系统，跳过系统更新"
+    else
+        # Linux/Unix 系统
+        sudo apt-get update -qq || { print_error "系统更新失败"; return 1; }
+    fi
 
     # 安装 curl
     if ! command -v curl &> /dev/null; then
         print_info "安装 curl..."
-        sudo apt-get install -y curl || { print_error "curl 安装失败"; return 1; }
+        if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+            print_info "Windows系统，请手动安装curl"
+        else
+            sudo apt-get install -y curl || { print_error "curl 安装失败"; return 1; }
+        fi
     fi
 
     # 安装 git
     if ! command -v git &> /dev/null; then
         print_info "安装 git..."
-        sudo apt-get install -y git || { print_error "git 安装失败"; return 1; }
+        if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+            print_info "Windows系统，请手动安装git"
+        else
+            sudo apt-get install -y git || { print_error "git 安装失败"; return 1; }
+        fi
     fi
 
     # 安装 Node.js 和 npm
     if ! command -v node &> /dev/null || ! command -v npm &> /dev/null; then
         print_info "安装 Node.js 和 npm..."
-        curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash - || { print_error "Node.js 源配置失败"; return 1; }
-        sudo apt-get install -y nodejs || { print_error "Node.js 安装失败"; return 1; }
+        if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+            print_info "Windows系统，请手动安装Node.js和npm"
+        else
+            curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash - || { print_error "Node.js 源配置失败"; return 1; }
+            sudo apt-get install -y nodejs || { print_error "Node.js 安装失败"; return 1; }
+        fi
     fi
 
     # 安装 PM2
