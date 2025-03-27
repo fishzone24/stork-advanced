@@ -164,6 +164,7 @@ install_project() {
 create_pm2_config() {
     print_info "创建 PM2 配置文件..."
     
+    # 创建 ecosystem.config.cjs
     cat > "$PROJECT_DIR/ecosystem.config.cjs" << EOF
 module.exports = {
   apps : [{
@@ -178,6 +179,12 @@ module.exports = {
   }]
 };
 EOF
+    
+    # 修改 package.json 中的 type 字段
+    if [ -f "$PROJECT_DIR/package.json" ]; then
+        print_info "修改 package.json 配置..."
+        sed -i 's/"type": "module"/"type": "commonjs"/' "$PROJECT_DIR/package.json"
+    fi
     
     print_success "PM2 配置文件创建完成"
 }
