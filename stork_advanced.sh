@@ -509,9 +509,9 @@ async function processAccount(account, accountIndex) {
   }
   
   const isProxyValid = await proxyManager.testProxy(proxy);
-  if (!isProxyValid) {
+  if (!isProxyValid && proxy) {
     console.error(`[${new Date().toISOString()}] [错误] 账户 ${account.username} 的代理无效`);
-    return;
+    console.warn(`[${new Date().toISOString()}] [警告] 尝试不使用代理继续...`);
   }
   
   let retries = 0;
@@ -523,13 +523,31 @@ async function processAccount(account, accountIndex) {
     try {
       const userAgent = proxyManager.getCurrentUserAgent();
       
+      // 准备启动选项
       const launchOptions = {
         ...config.botOptions,
         args: [
-          ...config.botOptions.args,
-          proxy ? `--proxy-server=${proxy}` : '',
-        ].filter(Boolean)
+          ...config.botOptions.args
+        ]
       };
+      
+      // 只有当代理有效时，才添加代理参数
+      if (proxy && isProxyValid) {
+        // 针对SOCKS代理特殊处理
+        if (proxy.startsWith('socks')) {
+          const socksUrl = new URL(proxy);
+          launchOptions.args.push(`--proxy-server=socks5://${socksUrl.host}`);
+          
+          // 如果有用户名和密码，需要特殊处理
+          if (socksUrl.username && socksUrl.password) {
+            launchOptions.args.push(`--proxy-auth=${socksUrl.username}:${socksUrl.password}`);
+          }
+        } else {
+          launchOptions.args.push(`--proxy-server=${proxy}`);
+        }
+      }
+      
+      console.log(`[${new Date().toISOString()}] [信息] 启动浏览器选项: ${JSON.stringify(launchOptions)}`);
       
       browser = await puppeteer.launch(launchOptions);
       const page = await browser.newPage();
