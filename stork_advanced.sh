@@ -840,8 +840,12 @@ main_menu() {
                 # 先安装依赖
                 install_dependencies || { print_error "依赖安装失败"; read -p "按回车键继续..." dummy; continue; }
                 
+                # 创建项目目录
+                print_info "创建项目目录..."
+                mkdir -p "$PROJECT_DIR" || { print_error "创建项目目录失败"; read -p "按回车键继续..." dummy; continue; }
+                
                 # 备份现有配置（如果存在）
-                if [ -d "$PROJECT_DIR" ]; then
+                if [ -d "$PROJECT_DIR/.git" ]; then
                     print_info "备份现有配置..."
                     cp -f "$ACCOUNTS_FILE" "$ACCOUNTS_FILE.bak" 2>/dev/null
                     cp -f "$PROXIES_FILE" "$PROXIES_FILE.bak" 2>/dev/null
