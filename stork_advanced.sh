@@ -865,13 +865,36 @@ main_menu() {
                 read -p "按回车键开始配置..." dummy
                 
                 # 配置账户
-                configure_accounts || { print_error "账户配置失败"; read -p "按回车键继续..." dummy; continue; }
+                print_info "配置账户信息..."
+                print_info "请输入账户信息（输入空邮箱完成）:"
+                echo "export const accounts = [" > "$ACCOUNTS_FILE"
+                local count=0
+                while true; do
+                    read -p "邮箱: " email
+                    [[ -z "$email" ]] && break
+                    read -p "密码: " password
+                    echo "  { username: \"$email\", password: \"$password\" }," >> "$ACCOUNTS_FILE"
+                    ((count++))
+                done
+                echo "];" >> "$ACCOUNTS_FILE"
+                print_success "已配置 $count 个账户"
                 
                 # 配置代理
-                configure_proxies || { print_error "代理配置失败"; read -p "按回车键继续..." dummy; continue; }
+                print_info "配置代理信息..."
+                print_info "请输入代理地址（支持格式：http://用户名:密码@IP:端口 或 IP:端口）"
+                print_warning "注意：每个账户应对应一个代理，请确保代理数量与账户数量一致！"
+                > "$PROXIES_FILE"
+                local proxy_count=0
+                while true; do
+                    read -p "代理地址: " proxy
+                    [[ -z "$proxy" ]] && break
+                    echo "$proxy" >> "$PROXIES_FILE"
+                    ((proxy_count++))
+                done
+                print_success "已配置 $proxy_count 个代理"
                 
                 # 创建配置文件
-                create_config_file || { print_error "配置文件创建失败"; read -p "按回车键继续..." dummy; continue; }
+                create_config_file
                 
                 print_success "安装和配置完成！"
                 print_info "您现在可以："
