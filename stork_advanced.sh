@@ -867,6 +867,29 @@ start_project() {
         print_info "配置文件已存在: $(pwd)/config.json"
     fi
     
+    # 安装必要的 NPM 依赖
+    print_info "检查并安装必要的 NPM 依赖..."
+    if [ ! -d "node_modules" ]; then
+        print_warning "未找到node_modules目录，安装依赖中..."
+        npm install puppeteer https-proxy-agent socks-proxy-agent || {
+            print_error "依赖安装失败"
+            read -p "按回车键继续..." dummy
+            return 1
+        }
+    else
+        # 检查是否有特定的模块
+        for module in "puppeteer" "https-proxy-agent" "socks-proxy-agent"; do
+            if [ ! -d "node_modules/$module" ]; then
+                print_warning "未找到模块: $module，正在安装..."
+                npm install $module || {
+                    print_error "安装 $module 失败"
+                    read -p "按回车键继续..." dummy
+                    return 1
+                }
+            fi
+        done
+    fi
+    
     # 检查是否有 PM2 进程存在
     if pm2 list | grep -q "$PM2_NAME"; then
         print_warning "发现已有 Stork 节点运行中"
