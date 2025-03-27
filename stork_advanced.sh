@@ -78,10 +78,8 @@ install_dependencies() {
 install_project() {
     print_info "开始安装项目..."
     
-    cd "$PROJECT_DIR" || { print_error "无法进入项目目录"; return 1; }
-    
     # 检查是否已经克隆了仓库
-    if [ -d ".git" ]; then
+    if [ -d "$PROJECT_DIR/.git" ]; then
         read -p "项目已存在，是否重新克隆？(y/n): " reclone
         if [[ "$reclone" == "y" || "$reclone" == "Y" ]]; then
             # 备份用户配置
@@ -89,14 +87,34 @@ install_project() {
             cp -f "$PROXIES_FILE" "$PROXIES_FILE.bak" 2>/dev/null
             cp -f "$CONFIG_FILE" "$CONFIG_FILE.bak" 2>/dev/null
             
-            cd .. && rm -rf "$PROJECT_DIR"
-            mkdir -p "$PROJECT_DIR"
-            cd "$PROJECT_DIR" || { print_error "无法进入项目目录"; return 1; }
+            # 清理目录
+            print_info "清理项目目录..."
+            rm -rf "$PROJECT_DIR"/* "$PROJECT_DIR"/.* 2>/dev/null || true
         else
             print_info "使用现有项目代码"
+            cd "$PROJECT_DIR" || { print_error "无法进入项目目录"; return 1; }
+            # 安装依赖
+            print_info "安装 npm 依赖..."
+            npm install || { print_error "依赖安装失败"; return 1; }
+            
+            # 安装 PM2 所需依赖
+            print_info "安装 PM2 所需依赖..."
+            npm install https-proxy-agent socks-proxy-agent || { print_error "PM2 依赖安装失败"; return 1; }
+            
+            # 创建修改版代码的文件
+            create_enhanced_code
+            
+            # 创建 PM2 配置文件
+            create_pm2_config
+            
+            print_success "项目安装完成！"
             return 0
         fi
     fi
+    
+    # 确保目录存在
+    mkdir -p "$PROJECT_DIR"
+    cd "$PROJECT_DIR" || { print_error "无法进入项目目录"; return 1; }
     
     # 克隆仓库
     print_info "克隆 Stork 仓库..."
