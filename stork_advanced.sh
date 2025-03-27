@@ -698,7 +698,10 @@ configure_accounts() {
         fi
     fi
 
-    echo "export const accounts = [" > "$ACCOUNTS_FILE"
+    # 使用 CommonJS 模块格式而不是 ES 模块
+    echo "// Stork 账户配置文件" > "$ACCOUNTS_FILE"
+    echo "// 使用 CommonJS 格式导出账户信息" >> "$ACCOUNTS_FILE"
+    echo "const accounts = [" >> "$ACCOUNTS_FILE"
     
     print_info "请输入账户信息（输入空邮箱完成）:"
     local count=0
@@ -711,6 +714,9 @@ configure_accounts() {
     done
     
     echo "];" >> "$ACCOUNTS_FILE"
+    echo "" >> "$ACCOUNTS_FILE"
+    echo "module.exports = { accounts };" >> "$ACCOUNTS_FILE"
+    
     print_success "已配置 $count 个账户"
 }
 
@@ -1036,7 +1042,7 @@ main_menu() {
                 # 配置账户
                 print_info "配置账户信息..."
                 print_info "请输入账户信息（输入空邮箱完成）:"
-                echo "export const accounts = [" > "$ACCOUNTS_FILE"
+                echo "const accounts = [" > "$ACCOUNTS_FILE"
                 local count=0
                 while true; do
                     read -p "邮箱: " email
@@ -1046,6 +1052,8 @@ main_menu() {
                     ((count++))
                 done
                 echo "];" >> "$ACCOUNTS_FILE"
+                echo "" >> "$ACCOUNTS_FILE"
+                echo "module.exports = { accounts };" >> "$ACCOUNTS_FILE"
                 print_success "已配置 $count 个账户"
                 
                 # 配置代理
