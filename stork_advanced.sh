@@ -235,6 +235,10 @@ EOF
 create_enhanced_code() {
     print_info "创建增强版代理管理代码..."
     
+    # 确保目录存在
+    mkdir -p "$PROJECT_DIR"
+    
+    # 创建 proxy-manager.js
     cat > "$PROJECT_DIR/proxy-manager.js" << 'EOF'
 const fs = require('fs');
 const path = require('path');
@@ -271,13 +275,11 @@ class ProxyManager {
     }
   }
 
-  // 为特定账户获取代理
   getProxyForAccount(accountIndex) {
     if (this.proxies.length === 0) {
       return null;
     }
     
-    // 如果账户索引超出代理数量，使用最后一个代理
     if (accountIndex >= this.proxies.length) {
       console.log(`[${new Date().toISOString()}] [警告] 账户索引 ${accountIndex} 超出代理数量 ${this.proxies.length}，使用最后一个代理`);
       return this.proxies[this.proxies.length - 1];
@@ -298,7 +300,6 @@ class ProxyManager {
   maskProxy(proxy) {
     if (!proxy) return 'none';
     
-    // 对于 http://user:pass@host:port 格式的代理
     if (proxy.includes('@')) {
       const [auth, hostPort] = proxy.split('@');
       const [protocol, userPass] = auth.split('://');
@@ -306,7 +307,6 @@ class ProxyManager {
       return `${protocol}://${user}:****@${hostPort}`;
     }
     
-    // 对于 host:port 格式的代理
     return proxy;
   }
 
@@ -314,13 +314,9 @@ class ProxyManager {
     if (!proxy) return null;
 
     try {
-      // 处理SOCKS代理
       if (proxy.startsWith('socks')) {
         return new SocksProxyAgent(proxy);
-      } 
-      // 处理HTTP/HTTPS代理
-      else {
-        // 如果代理格式只是IP:端口，添加http://前缀
+      } else {
         if (!proxy.includes('://')) {
           proxy = `http://${proxy}`;
         }
@@ -425,18 +421,15 @@ const proxyManager = new ProxyManager(config);
 
 // 主函数
 async function main() {
-  // 检查账户
   if (accounts.length === 0) {
     console.error(`[${new Date().toISOString()}] [错误] 没有可用账户`);
     process.exit(1);
   }
 
-  // 处理每个账户
   for (let i = 0; i < accounts.length; i++) {
     await processAccount(accounts[i], i);
   }
 
-  // 设置下次运行
   console.log(`[${new Date().toISOString()}] [信息] 任务完成，${config.taskInterval} 秒后再次运行`);
   setTimeout(main, config.taskInterval * 1000);
 }
@@ -445,7 +438,6 @@ async function main() {
 async function processAccount(account, accountIndex) {
   console.log(`[${new Date().toISOString()}] [信息] 正在处理 ${account.username} (账户 ${accountIndex + 1}/${accounts.length})`);
   
-  // 获取此账户对应的代理
   const proxy = proxyManager.getProxyForAccount(accountIndex);
   console.log(`[${new Date().toISOString()}] [信息] 使用代理: ${proxyManager.maskProxy(proxy)}`);
   
@@ -453,7 +445,6 @@ async function processAccount(account, accountIndex) {
     console.warn(`[${new Date().toISOString()}] [警告] 账户 ${account.username} 没有对应的代理配置`);
   }
   
-  // 测试代理是否有效
   const isProxyValid = await proxyManager.testProxy(proxy);
   if (!isProxyValid) {
     console.error(`[${new Date().toISOString()}] [错误] 账户 ${account.username} 的代理无效`);
@@ -469,7 +460,6 @@ async function processAccount(account, accountIndex) {
     try {
       const userAgent = proxyManager.getCurrentUserAgent();
       
-      // 配置浏览器启动参数
       const launchOptions = {
         ...config.botOptions,
         args: [
@@ -478,27 +468,18 @@ async function processAccount(account, accountIndex) {
         ].filter(Boolean)
       };
       
-      // 启动浏览器
       browser = await puppeteer.launch(launchOptions);
-      
-      // 打开页面
       const page = await browser.newPage();
       
-      // 设置用户代理和请求头
       await page.setUserAgent(userAgent);
       await page.setExtraHTTPHeaders(config.headers || {});
-      
-      // 设置视口大小
       await page.setViewport({ width: 1920, height: 1080 });
       
-      // 设置避免指纹识别
       await page.evaluateOnNewDocument(() => {
-        // 重写 WebDriver 属性
         Object.defineProperty(navigator, 'webdriver', {
           get: () => false,
         });
         
-        // 重写 navigator.plugins
         Object.defineProperty(navigator, 'plugins', {
           get: () => {
             return [
@@ -509,12 +490,10 @@ async function processAccount(account, accountIndex) {
           },
         });
         
-        // 重写 navigator.languages
         Object.defineProperty(navigator, 'languages', {
           get: () => ['en-US', 'en'],
         });
         
-        // 隐藏 Puppeteer 特征
         const originalQuery = window.navigator.permissions.query;
         window.navigator.permissions.query = (parameters) => (
           parameters.name === 'notifications' ?
@@ -523,10 +502,7 @@ async function processAccount(account, accountIndex) {
         );
       });
       
-      // 执行登录
       await login(page, account);
-      
-      // 执行其他任务...
       await performTasks(page);
       
       success = true;
@@ -557,26 +533,21 @@ async function login(page, account) {
   try {
     console.log(`[${new Date().toISOString()}] [信息] 尝试登录 ${account.username}`);
     
-    // 访问登录页面
     await page.goto('https://app.stork.network/login', {
       waitUntil: 'networkidle2',
       timeout: config.requestTimeout || 30000
     });
     
-    // 等待登录表单加载
     await page.waitForSelector('input[type="email"]', { timeout: 10000 });
     
-    // 输入邮箱和密码
     await page.type('input[type="email"]', account.username);
     await page.type('input[type="password"]', account.password);
     
-    // 点击登录按钮
     await Promise.all([
       page.click('button[type="submit"]'),
       page.waitForNavigation({ waitUntil: 'networkidle2' })
     ]);
     
-    // 检查是否成功登录
     const url = page.url();
     if (url.includes('dashboard')) {
       console.log(`[${new Date().toISOString()}] [信息] ${account.username} 登录成功`);
@@ -594,17 +565,11 @@ async function login(page, account) {
 // 执行任务函数
 async function performTasks(page) {
   try {
-    // 等待页面加载完成
     await page.waitForSelector('.dashboard-container', { timeout: 10000 });
     
-    // 在这里添加您需要完成的任务
     console.log(`[${new Date().toISOString()}] [信息] 执行任务...`);
     
-    // 等待一段时间模拟人的行为
     await page.waitForTimeout(2000 + Math.random() * 3000);
-    
-    // 示例：点击某个链接或按钮
-    // await page.click('.some-button-class');
     
     console.log(`[${new Date().toISOString()}] [信息] 任务执行完成`);
     
