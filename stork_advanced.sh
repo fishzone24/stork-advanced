@@ -89,7 +89,11 @@ install_project() {
             
             # 清理目录
             print_info "清理项目目录..."
-            rm -rf "$PROJECT_DIR"/* "$PROJECT_DIR"/.* 2>/dev/null || true
+            cd "$PROJECT_DIR" || { print_error "无法进入项目目录"; return 1; }
+            git clean -fdx || true
+            cd .. || { print_error "无法返回上级目录"; return 1; }
+            rm -rf "$PROJECT_DIR"
+            mkdir -p "$PROJECT_DIR"
         else
             print_info "使用现有项目代码"
             cd "$PROJECT_DIR" || { print_error "无法进入项目目录"; return 1; }
