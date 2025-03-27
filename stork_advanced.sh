@@ -183,7 +183,24 @@ EOF
     # 修改 package.json 中的 type 字段
     if [ -f "$PROJECT_DIR/package.json" ]; then
         print_info "修改 package.json 配置..."
-        sed -i 's/"type": "module"/"type": "commonjs"/' "$PROJECT_DIR/package.json"
+        # 如果文件不存在，创建一个新的
+        if [ ! -f "$PROJECT_DIR/package.json" ]; then
+            cat > "$PROJECT_DIR/package.json" << EOF
+{
+  "name": "stork-node",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "dependencies": {
+    "puppeteer": "^latest",
+    "https-proxy-agent": "^latest",
+    "socks-proxy-agent": "^latest"
+  }
+}
+EOF
+        else
+            # 如果文件存在，修改 type 字段
+            sed -i 's/"type": "module"/"type": "commonjs"/' "$PROJECT_DIR/package.json"
+        fi
     fi
     
     print_success "PM2 配置文件创建完成"
