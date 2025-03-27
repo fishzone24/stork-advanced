@@ -572,8 +572,30 @@ async function processAccount(account, accountIndex) {
   
   // 尝试不同的代理连接方式
   const connectionMethods = [
-    { name: "使用启动参数", useProxy: true, useExplicitArgs: true },
-    { name: "使用请求拦截", useProxy: true, useExplicitArgs: false, useHeadless: true }
+    { 
+      name: "使用直接代理服务器参数", 
+      useProxy: true, 
+      proxyFormat: "direct", 
+      useExplicitArgs: true
+    },
+    { 
+      name: "使用socks5代理", 
+      useProxy: true, 
+      proxyFormat: "socks5", 
+      useExplicitArgs: true 
+    },
+    { 
+      name: "使用http代理", 
+      useProxy: true, 
+      proxyFormat: "http", 
+      useExplicitArgs: true 
+    },
+    { 
+      name: "使用请求拦截", 
+      useProxy: true, 
+      useExplicitArgs: false, 
+      useHeadless: true 
+    }
   ];
   
   for (const method of connectionMethods) {
@@ -596,29 +618,56 @@ async function processAccount(account, accountIndex) {
           "--disable-features=IsolateOrigins,site-per-process",
           "--disable-web-security",
           "--disable-features=BlockInsecurePrivateNetworkRequests",
+          "--disable-blink-features=AutomationControlled",
+          "--no-default-browser-check",
+          "--no-first-run",
           `--user-agent=${userAgent}`
         ];
         
         // 使用代理
         if (method.useExplicitArgs) {
-          // 方法1: 使用启动参数添加代理
+          // 根据不同的代理格式生成参数
+          let proxyServerArg = null;
+          let proxyAuthArg = null;
+          
           if (proxy.startsWith('socks')) {
             try {
               const url = new URL(proxy);
-              launchArgs.push(`--proxy-server=socks5=${url.hostname}:${url.port}`);
+              const host = url.hostname;
+              const port = url.port;
+              
+              // 根据代理格式选择不同的代理参数形式
+              if (method.proxyFormat === "direct") {
+                proxyServerArg = `--proxy-server=${proxy}`;
+              } else if (method.proxyFormat === "socks5") {
+                proxyServerArg = `--proxy-server=socks5=${host}:${port}`;
+              } else if (method.proxyFormat === "http") {
+                proxyServerArg = `--proxy-server=http://${host}:${port}`;
+              }
               
               if (url.username && url.password) {
-                launchArgs.push(`--proxy-auth=${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`);
+                proxyAuthArg = `--proxy-auth=${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`;
               }
             } catch (e) {
               console.error(`[${new Date().toISOString()}] [错误] 解析SOCKS代理失败:`, e.message);
-              launchArgs.push(`--proxy-server=${proxy}`);
+              // 如果解析失败，使用原始代理字符串
+              proxyServerArg = `--proxy-server=${proxy}`;
             }
           } else if (proxy.includes('http')) {
-            launchArgs.push(`--proxy-server=${proxy}`);
+            proxyServerArg = `--proxy-server=${proxy}`;
           } else {
             // 假设是IP:PORT格式
-            launchArgs.push(`--proxy-server=http://${proxy}`);
+            proxyServerArg = `--proxy-server=http://${proxy}`;
+          }
+          
+          if (proxyServerArg) {
+            console.log(`[${new Date().toISOString()}] [信息] 使用代理参数: ${proxyServerArg}`);
+            launchArgs.push(proxyServerArg);
+          }
+          
+          if (proxyAuthArg) {
+            console.log(`[${new Date().toISOString()}] [信息] 使用认证参数: ${proxyAuthArg.replace(/:[^:]*$/, ':****')}`);
+            launchArgs.push(proxyAuthArg);
           }
         }
         
@@ -629,16 +678,28 @@ async function processAccount(account, accountIndex) {
           headless: method.useHeadless !== false ? true : false,
           args: launchArgs,
           ignoreHTTPSErrors: true,
-          timeout: 60000
+          timeout: 60000,
+          defaultViewport: {
+            width: 1920,
+            height: 1080
+          },
+          // 尝试使用额外日志
+          dumpio: true
         };
         
+        console.log(`[${new Date().toISOString()}] [信息] 启动浏览器中...`);
         browser = await puppeteer.launch(launchOptions);
+        console.log(`[${new Date().toISOString()}] [信息] 浏览器启动成功，打开新页面...`);
+        
         const page = await browser.newPage();
+        console.log(`[${new Date().toISOString()}] [信息] 新页面已打开`);
         
         // 如果使用请求拦截方式
         if (!method.useExplicitArgs) {
           // 方法2: 在页面级别设置代理
+          console.log(`[${new Date().toISOString()}] [信息] 设置请求拦截...`);
           if (proxy.startsWith('socks')) {
+            console.log(`[${new Date().toISOString()}] [信息] 使用SOCKS代理拦截请求: ${maskProxy(proxy)}`);
             const agent = new SocksProxyAgent(proxy);
             await page.setRequestInterception(true);
             page.on('request', request => {
@@ -655,6 +716,7 @@ async function processAccount(account, accountIndex) {
               request.continue(overrides);
             });
           } else {
+            console.log(`[${new Date().toISOString()}] [信息] 使用HTTP代理拦截请求: ${maskProxy(proxy)}`);
             const agent = new HttpsProxyAgent(proxy.includes('http') ? proxy : `http://${proxy}`);
             await page.setRequestInterception(true);
             page.on('request', request => {
@@ -673,6 +735,7 @@ async function processAccount(account, accountIndex) {
           }
         }
         
+        console.log(`[${new Date().toISOString()}] [信息] 设置页面参数...`);
         await page.setUserAgent(userAgent);
         await page.setExtraHTTPHeaders({
           'Accept-Language': 'en-US,en;q=0.9',
@@ -684,6 +747,7 @@ async function processAccount(account, accountIndex) {
         await page.setViewport({ width: 1920, height: 1080 });
         
         // 防止指纹识别
+        console.log(`[${new Date().toISOString()}] [信息] 设置浏览器指纹...`);
         await page.evaluateOnNewDocument(() => {
           Object.defineProperty(navigator, 'webdriver', {
             get: () => false,
@@ -709,9 +773,20 @@ async function processAccount(account, accountIndex) {
               Promise.resolve({ state: Notification.permission }) :
               originalQuery(parameters)
           );
+          
+          // 更多的反检测代码
+          window.navigator.chrome = {
+            runtime: {},
+          };
+          
+          window.chrome = {
+            runtime: {},
+          };
         });
         
+        console.log(`[${new Date().toISOString()}] [信息] 开始登录过程...`);
         await login(page, account);
+        console.log(`[${new Date().toISOString()}] [信息] 登录完成，开始执行任务...`);
         await performTasks(page);
         
         success = true;
@@ -727,7 +802,8 @@ async function processAccount(account, accountIndex) {
         }
       } finally {
         if (browser) {
-          await browser.close();
+          console.log(`[${new Date().toISOString()}] [信息] 关闭浏览器...`);
+          await browser.close().catch(e => console.log(`[${new Date().toISOString()}] [警告] 关闭浏览器时出错: ${e.message}`));
         }
       }
     }
@@ -743,27 +819,76 @@ async function login(page, account) {
   try {
     console.log(`[${new Date().toISOString()}] [信息] 尝试登录 ${account.username}`);
     
+    // 增加超时时间和页面加载选项
+    console.log(`[${new Date().toISOString()}] [信息] 正在访问登录页面...`);
     await page.goto('https://app.stork.network/login', {
       waitUntil: 'networkidle2',
-      timeout: config.requestTimeout || 30000
+      timeout: 60000 // 增加到60秒
     });
     
-    await page.waitForSelector('input[type="email"]', { timeout: 10000 });
+    // 检查页面是否加载成功
+    const pageTitle = await page.title().catch(() => "无法获取标题");
+    const pageUrl = page.url();
+    console.log(`[${new Date().toISOString()}] [信息] 页面已加载: 标题="${pageTitle}", URL=${pageUrl}`);
     
+    // 尝试截图保存页面状态
+    try {
+      await page.screenshot({ path: 'login_page.png' });
+      console.log(`[${new Date().toISOString()}] [信息] 已保存页面截图到 login_page.png`);
+    } catch (e) {
+      console.log(`[${new Date().toISOString()}] [警告] 无法保存截图: ${e.message}`);
+    }
+    
+    // 尝试输出页面内容以进行调试
+    console.log(`[${new Date().toISOString()}] [信息] 检查页面内容...`);
+    const bodyContent = await page.evaluate(() => {
+      return document.body.innerText.substring(0, 500) + '...'; // 截取前500个字符
+    }).catch(e => `无法获取页面内容: ${e.message}`);
+    console.log(`[${new Date().toISOString()}] [信息] 页面内容预览: ${bodyContent}`);
+    
+    // 检查是否有特定的错误消息或验证码
+    if (bodyContent.includes('captcha') || bodyContent.includes('验证码') || bodyContent.includes('robot')) {
+      console.log(`[${new Date().toISOString()}] [警告] 检测到可能存在验证码或机器人检测`);
+    }
+    
+    // 等待登录表单加载，使用更长的超时时间
+    console.log(`[${new Date().toISOString()}] [信息] 等待登录表单出现...`);
+    await page.waitForSelector('input[type="email"]', { timeout: 30000 }); // 增加到30秒
+    console.log(`[${new Date().toISOString()}] [信息] 找到邮箱输入框，准备输入凭据`);
+    
+    // 输入凭据前等待一下
+    await page.waitForTimeout(1000);
+    
+    // 输入邮箱和密码
     await page.type('input[type="email"]', account.username);
+    await page.waitForTimeout(500); // 在两次输入之间添加小延迟
     await page.type('input[type="password"]', account.password);
+    await page.waitForTimeout(500); // 点击之前添加小延迟
     
+    // 点击登录按钮
+    console.log(`[${new Date().toISOString()}] [信息] 点击登录按钮...`);
     await Promise.all([
       page.click('button[type="submit"]'),
-      page.waitForNavigation({ waitUntil: 'networkidle2' })
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
     ]);
     
-    const url = page.url();
-    if (url.includes('dashboard')) {
+    // 检查登录后的页面
+    const afterLoginUrl = page.url();
+    console.log(`[${new Date().toISOString()}] [信息] 登录后导航到: ${afterLoginUrl}`);
+    
+    if (afterLoginUrl.includes('dashboard')) {
       console.log(`[${new Date().toISOString()}] [信息] ${account.username} 登录成功`);
       return true;
     } else {
-      throw new Error('登录失败，未重定向到仪表板');
+      // 尝试截图记录失败状态
+      try {
+        await page.screenshot({ path: 'login_failed.png' });
+        console.log(`[${new Date().toISOString()}] [信息] 已保存失败页面截图到 login_failed.png`);
+      } catch (e) {
+        console.log(`[${new Date().toISOString()}] [警告] 无法保存失败截图: ${e.message}`);
+      }
+      
+      throw new Error(`登录失败，未重定向到仪表板，而是: ${afterLoginUrl}`);
     }
     
   } catch (error) {
