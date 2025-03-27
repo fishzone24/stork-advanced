@@ -13,7 +13,7 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
     PROJECT_DIR="./stork_advanced"
 else
     # Linux/Unix 系统
-    PROJECT_DIR="$HOME/stork_advanced"
+    PROJECT_DIR="/root/stork_advanced"
 fi
 
 CONFIG_FILE="$PROJECT_DIR/config.json"
