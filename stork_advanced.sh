@@ -188,9 +188,27 @@ install_project() {
 # 创建 PM2 配置文件
 create_pm2_config() {
     print_info "创建 PM2 配置文件..."
+    print_info "当前目录: $(pwd)"
+    
+    # 确保目录存在
+    if [ ! -d "$PROJECT_DIR" ]; then
+        mkdir -p "$PROJECT_DIR"
+        print_info "创建项目目录: $PROJECT_DIR"
+    fi
+    
+    # 确保我们在正确的目录中
+    if [ "$(pwd)" != "$PROJECT_DIR" ]; then
+        print_info "切换到项目目录: $PROJECT_DIR"
+        cd "$PROJECT_DIR" || { 
+            print_error "无法进入项目目录: $PROJECT_DIR"
+            return 1
+        }
+    fi
+    
+    print_info "创建 ecosystem.config.cjs 在 $(pwd)"
     
     # 创建 ecosystem.config.cjs
-    cat > "$PROJECT_DIR/ecosystem.config.cjs" << EOF
+    cat > "ecosystem.config.cjs" << EOF
 module.exports = {
   apps : [{
     name: "${PM2_NAME}",
@@ -204,13 +222,21 @@ module.exports = {
   }]
 };
 EOF
+
+    # 检查文件是否创建成功
+    if [ ! -f "ecosystem.config.cjs" ]; then
+        print_error "ecosystem.config.cjs 创建失败"
+        return 1
+    else
+        print_success "ecosystem.config.cjs 创建成功: $(pwd)/ecosystem.config.cjs"
+    fi
     
     # 修改 package.json 中的 type 字段
-    if [ -f "$PROJECT_DIR/package.json" ]; then
+    if [ -f "package.json" ]; then
         print_info "修改 package.json 配置..."
         # 如果文件不存在，创建一个新的
-        if [ ! -f "$PROJECT_DIR/package.json" ]; then
-            cat > "$PROJECT_DIR/package.json" << EOF
+        if [ ! -f "package.json" ]; then
+            cat > "package.json" << EOF
 {
   "name": "stork-node",
   "version": "1.0.0",
@@ -224,22 +250,51 @@ EOF
 EOF
         else
             # 如果文件存在，修改 type 字段
-            sed -i 's/"type": "module"/"type": "commonjs"/' "$PROJECT_DIR/package.json"
+            print_info "将 package.json 中的 type 修改为 commonjs"
+            sed -i 's/"type": "module"/"type": "commonjs"/' "package.json"
+        fi
+        
+        # 检查 package.json 是否包含 type: commonjs
+        if grep -q '"type": "commonjs"' "package.json"; then
+            print_success "package.json 成功配置为 commonjs 类型"
+        else
+            print_warning "未能确认 package.json 类型，尝试手动添加"
+            # 尝试添加type字段
+            sed -i '/"name"/a \  "type": "commonjs",' "package.json"
         fi
     fi
     
     print_success "PM2 配置文件创建完成"
+    
+    # 返回原目录
+    cd - > /dev/null 2>&1 || true
+    return 0
 }
 
 # 创建增强版代码解决 WAF 问题
 create_enhanced_code() {
     print_info "创建增强版代理管理代码..."
+    print_info "当前目录: $(pwd)"
     
     # 确保目录存在
-    mkdir -p "$PROJECT_DIR"
+    if [ ! -d "$PROJECT_DIR" ]; then
+        mkdir -p "$PROJECT_DIR"
+        print_info "创建项目目录: $PROJECT_DIR"
+    fi
+    
+    # 确保我们在正确的目录中
+    if [ "$(pwd)" != "$PROJECT_DIR" ]; then
+        print_info "切换到项目目录: $PROJECT_DIR"
+        cd "$PROJECT_DIR" || { 
+            print_error "无法进入项目目录: $PROJECT_DIR"
+            return 1
+        }
+    fi
+    
+    print_info "创建 proxy-manager.js 在 $(pwd)"
     
     # 创建 proxy-manager.js
-    cat > "$PROJECT_DIR/proxy-manager.js" << 'EOF'
+    cat > "proxy-manager.js" << 'EOF'
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -373,9 +428,17 @@ class ProxyManager {
 module.exports = ProxyManager;
 EOF
 
+    # 检查文件是否创建成功
+    if [ ! -f "proxy-manager.js" ]; then
+        print_error "proxy-manager.js 创建失败"
+        return 1
+    else
+        print_success "proxy-manager.js 创建成功: $(pwd)/proxy-manager.js"
+    fi
+
     print_info "创建增强版主代码文件..."
     
-    cat > "$PROJECT_DIR/enhanced-index.js" << 'EOF'
+    cat > "enhanced-index.js" << 'EOF'
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
@@ -587,7 +650,19 @@ main().catch(error => {
 });
 EOF
 
+    # 检查文件是否创建成功
+    if [ ! -f "enhanced-index.js" ]; then
+        print_error "enhanced-index.js 创建失败"
+        return 1
+    else
+        print_success "enhanced-index.js 创建成功: $(pwd)/enhanced-index.js"
+    fi
+
     print_success "增强版代码创建完成"
+    
+    # 返回原目录
+    cd - > /dev/null 2>&1 || true
+    return 0
 }
 
 # 配置项目
@@ -741,34 +816,55 @@ check_status() {
 start_project() {
     print_info "启动 Stork 节点程序..."
     
-    cd "$PROJECT_DIR" || { print_error "无法进入项目目录"; return 1; }
+    print_info "使用目录: $PROJECT_DIR"
+    if [ ! -d "$PROJECT_DIR" ]; then
+        print_error "项目目录不存在，创建中..."
+        mkdir -p "$PROJECT_DIR"
+    fi
+    
+    cd "$PROJECT_DIR" || { print_error "无法进入项目目录: $PROJECT_DIR"; return 1; }
     
     # 检查必要文件是否存在
     if [ ! -f "proxy-manager.js" ]; then
+        print_warning "找不到代理管理文件: $(pwd)/proxy-manager.js"
         print_info "创建代理管理文件..."
-        create_enhanced_code
+        create_enhanced_code || { print_error "创建代理管理文件失败"; return 1; }
+    else
+        print_info "代理管理文件已存在: $(pwd)/proxy-manager.js"
     fi
     
     if [ ! -f "ecosystem.config.cjs" ]; then
+        print_warning "找不到PM2配置文件: $(pwd)/ecosystem.config.cjs"
         print_info "创建PM2配置文件..."
-        create_pm2_config
+        create_pm2_config || { print_error "创建PM2配置文件失败"; return 1; }
+    else
+        print_info "PM2配置文件已存在: $(pwd)/ecosystem.config.cjs"
     fi
     
     if [ ! -f "accounts.js" ]; then
-        print_error "账户配置文件不存在，请先运行选项1进行安装和配置"
+        print_error "账户配置文件不存在: $(pwd)/accounts.js"
+        print_info "请先运行选项1进行安装和配置"
         read -p "按回车键继续..." dummy
         return 1
+    else
+        print_info "账户配置文件已存在: $(pwd)/accounts.js"
     fi
     
     if [ ! -f "proxies.txt" ]; then
-        print_error "代理配置文件不存在，请先运行选项1进行安装和配置"
+        print_error "代理配置文件不存在: $(pwd)/proxies.txt"
+        print_info "请先运行选项1进行安装和配置"
         read -p "按回车键继续..." dummy
         return 1
+    else
+        print_info "代理配置文件已存在: $(pwd)/proxies.txt"
     fi
     
     if [ ! -f "config.json" ]; then
+        print_warning "找不到配置文件: $(pwd)/config.json"
         print_info "创建配置文件..."
-        create_config_file
+        create_config_file || { print_error "创建配置文件失败"; return 1; }
+    else
+        print_info "配置文件已存在: $(pwd)/config.json"
     fi
     
     # 检查是否有 PM2 进程存在
@@ -783,6 +879,10 @@ start_project() {
             return 0
         fi
     fi
+    
+    # 确保所有必要的文件已经创建
+    print_info "验证所有必要文件..."
+    ls -la
     
     # 使用 PM2 启动
     print_info "使用 PM2 启动节点..."
