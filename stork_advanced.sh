@@ -845,17 +845,6 @@ main_menu() {
                     }
                 }
                 
-                # 恢复配置（如果有备份）
-                if [ -f "$ACCOUNTS_FILE.bak" ]; then
-                    cp -f "$ACCOUNTS_FILE.bak" "$ACCOUNTS_FILE"
-                fi
-                if [ -f "$PROXIES_FILE.bak" ]; then
-                    cp -f "$PROXIES_FILE.bak" "$PROXIES_FILE"
-                fi
-                if [ -f "$CONFIG_FILE.bak" ]; then
-                    cp -f "$CONFIG_FILE.bak" "$CONFIG_FILE"
-                fi
-                
                 # 安装项目依赖
                 print_info "安装 npm 依赖..."
                 npm install || { print_error "依赖安装失败"; read -p "按回车键继续..." dummy; continue; }
@@ -869,6 +858,18 @@ main_menu() {
                 
                 # 创建 PM2 配置文件
                 create_pm2_config
+                
+                print_success "项目安装完成！"
+                print_info "开始配置项目..."
+                
+                # 配置账户
+                configure_accounts || { print_error "账户配置失败"; read -p "按回车键继续..." dummy; continue; }
+                
+                # 配置代理
+                configure_proxies || { print_error "代理配置失败"; read -p "按回车键继续..." dummy; continue; }
+                
+                # 创建配置文件
+                create_config_file || { print_error "配置文件创建失败"; read -p "按回车键继续..." dummy; continue; }
                 
                 print_success "安装和配置完成！"
                 read -p "按回车键继续..." dummy
