@@ -811,7 +811,17 @@ main_menu() {
         
         case $choice in
             1)
-                install_dependencies && configure_project && install_project
+                print_info "开始安装流程..."
+                # 先安装依赖
+                install_dependencies || { print_error "依赖安装失败"; read -p "按回车键继续..." dummy; continue; }
+                
+                # 然后克隆仓库
+                install_project || { print_error "项目安装失败"; read -p "按回车键继续..." dummy; continue; }
+                
+                # 最后进行配置
+                configure_project || { print_error "项目配置失败"; read -p "按回车键继续..." dummy; continue; }
+                
+                print_success "安装和配置完成！"
                 read -p "按回车键继续..." dummy
                 ;;
             2)
