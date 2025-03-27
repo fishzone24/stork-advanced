@@ -1296,8 +1296,8 @@ main_menu() {
     while true; do
         clear
        
-# 署名和说明
-cat << "EOF"
+
+        cat << "EOF"
 
    __   _         _                                    ___    _  _   
   / _| (_)       | |                                  |__ \  | || |  
@@ -1311,15 +1311,8 @@ cat << "EOF"
                                                                                                                                   
 
 EOF
-echo -e "${BLUE}==================================================================${RESET}"
-echo -e "${GREEN}Stork 节点一键管理脚本${RESET}"
-echo -e "${YELLOW}脚本作者: fishzone24 - 推特: https://x.com/fishzone24${RESET}"
-echo -e "${YELLOW}此脚本为免费开源脚本，如有问题请提交 issue${RESET}"
-echo -e "${BLUE}==================================================================${RESET}"
         echo -e "${BLUE}==============================================${NC}"
-        echo -e "${GREEN}         Stork 高级节点管理脚本           ${NC}"
-        echo -e "${BLUE}==============================================${NC}"
-        echo -e "脚本版本: 1.0.0"
+        echo -e "脚本版本: 1.0.0" 脚本作者: fishzone24 - 推特: https://x.com/fishzone24${RESET}"
         echo -e "说明: 此脚本支持多账户一对一代理，使用PM2管理，解决WAF阻止问题"
         echo -e "${BLUE}==============================================${NC}"
         echo -e "请选择操作:"
