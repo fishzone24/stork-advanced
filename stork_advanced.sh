@@ -813,26 +813,62 @@ main_menu() {
             1)
                 print_info "开始安装流程..."
                 
-                # 先清理项目目录
-                if [ -d "$PROJECT_DIR" ]; then
-                    read -p "项目目录已存在，是否重新安装？(y/n): " reinstall
-                    if [[ "$reinstall" == "y" || "$reinstall" == "Y" ]]; then
-                        print_info "清理项目目录..."
-                        rm -rf "$PROJECT_DIR"
-                        mkdir -p "$PROJECT_DIR"
-                    else
-                        print_info "使用现有项目目录"
-                    fi
-                fi
-                
-                # 安装依赖
+                # 先安装依赖
                 install_dependencies || { print_error "依赖安装失败"; read -p "按回车键继续..." dummy; continue; }
                 
-                # 克隆仓库
-                install_project || { print_error "项目安装失败"; read -p "按回车键继续..." dummy; continue; }
+                # 备份现有配置（如果存在）
+                if [ -d "$PROJECT_DIR" ]; then
+                    print_info "备份现有配置..."
+                    cp -f "$ACCOUNTS_FILE" "$ACCOUNTS_FILE.bak" 2>/dev/null
+                    cp -f "$PROXIES_FILE" "$PROXIES_FILE.bak" 2>/dev/null
+                    cp -f "$CONFIG_FILE" "$CONFIG_FILE.bak" 2>/dev/null
+                    
+                    # 清理目录
+                    print_info "清理项目目录..."
+                    cd "$PROJECT_DIR" || { print_error "无法进入项目目录"; return 1; }
+                    git clean -fdx || true
+                    cd .. || { print_error "无法返回上级目录"; return 1; }
+                    rm -rf "$PROJECT_DIR"
+                    mkdir -p "$PROJECT_DIR"
+                fi
                 
-                # 配置项目
-                configure_project || { print_error "项目配置失败"; read -p "按回车键继续..." dummy; continue; }
+                # 克隆仓库
+                cd "$PROJECT_DIR" || { print_error "无法进入项目目录"; return 1; }
+                print_info "克隆 Stork 仓库..."
+                git clone https://github.com/sdohuajia/stork.git . || { 
+                    print_error "仓库克隆失败";
+                    print_info "尝试使用备选仓库...";
+                    git clone https://github.com/Stork-Project/stork-bot.git . || {
+                        print_error "备选仓库克隆也失败，请检查网络连接";
+                        read -p "按回车键继续..." dummy;
+                        continue;
+                    }
+                }
+                
+                # 恢复配置（如果有备份）
+                if [ -f "$ACCOUNTS_FILE.bak" ]; then
+                    cp -f "$ACCOUNTS_FILE.bak" "$ACCOUNTS_FILE"
+                fi
+                if [ -f "$PROXIES_FILE.bak" ]; then
+                    cp -f "$PROXIES_FILE.bak" "$PROXIES_FILE"
+                fi
+                if [ -f "$CONFIG_FILE.bak" ]; then
+                    cp -f "$CONFIG_FILE.bak" "$CONFIG_FILE"
+                fi
+                
+                # 安装项目依赖
+                print_info "安装 npm 依赖..."
+                npm install || { print_error "依赖安装失败"; read -p "按回车键继续..." dummy; continue; }
+                
+                # 安装 PM2 所需依赖
+                print_info "安装 PM2 所需依赖..."
+                npm install https-proxy-agent socks-proxy-agent || { print_error "PM2 依赖安装失败"; read -p "按回车键继续..." dummy; continue; }
+                
+                # 创建修改版代码的文件
+                create_enhanced_code
+                
+                # 创建 PM2 配置文件
+                create_pm2_config
                 
                 print_success "安装和配置完成！"
                 read -p "按回车键继续..." dummy
