@@ -778,6 +778,34 @@ start_project() {
     
     cd "$PROJECT_DIR" || { print_error "无法进入项目目录"; return 1; }
     
+    # 检查必要文件是否存在
+    if [ ! -f "proxy-manager.js" ]; then
+        print_info "创建代理管理文件..."
+        create_enhanced_code
+    fi
+    
+    if [ ! -f "ecosystem.config.cjs" ]; then
+        print_info "创建PM2配置文件..."
+        create_pm2_config
+    fi
+    
+    if [ ! -f "accounts.js" ]; then
+        print_error "账户配置文件不存在，请先运行选项1进行安装和配置"
+        read -p "按回车键继续..." dummy
+        return 1
+    fi
+    
+    if [ ! -f "proxies.txt" ]; then
+        print_error "代理配置文件不存在，请先运行选项1进行安装和配置"
+        read -p "按回车键继续..." dummy
+        return 1
+    fi
+    
+    if [ ! -f "config.json" ]; then
+        print_info "创建配置文件..."
+        create_config_file
+    fi
+    
     # 检查是否有 PM2 进程存在
     if pm2 list | grep -q "$PM2_NAME"; then
         print_warning "发现已有 Stork 节点运行中"
