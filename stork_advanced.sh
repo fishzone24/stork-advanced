@@ -812,13 +812,26 @@ main_menu() {
         case $choice in
             1)
                 print_info "开始安装流程..."
-                # 先安装依赖
+                
+                # 先清理项目目录
+                if [ -d "$PROJECT_DIR" ]; then
+                    read -p "项目目录已存在，是否重新安装？(y/n): " reinstall
+                    if [[ "$reinstall" == "y" || "$reinstall" == "Y" ]]; then
+                        print_info "清理项目目录..."
+                        rm -rf "$PROJECT_DIR"
+                        mkdir -p "$PROJECT_DIR"
+                    else
+                        print_info "使用现有项目目录"
+                    fi
+                fi
+                
+                # 安装依赖
                 install_dependencies || { print_error "依赖安装失败"; read -p "按回车键继续..." dummy; continue; }
                 
-                # 然后克隆仓库
+                # 克隆仓库
                 install_project || { print_error "项目安装失败"; read -p "按回车键继续..." dummy; continue; }
                 
-                # 最后进行配置
+                # 配置项目
                 configure_project || { print_error "项目配置失败"; read -p "按回车键继续..." dummy; continue; }
                 
                 print_success "安装和配置完成！"
